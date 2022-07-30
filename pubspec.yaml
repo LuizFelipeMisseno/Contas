@@ -47,6 +47,7 @@ dependencies:
   syncfusion_flutter_pdf: ^20.1.51-beta
   permission_handler: ^9.2.0
   path_provider: ^2.0.9
+  flutter_share: ^2.0.0
 
 dev_dependencies:
   flutter_test:

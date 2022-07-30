@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,13 +6,17 @@ import 'package:contas/database/transation_info.dart';
 import 'package:contas/homepage/components/homepage_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_share/flutter_share.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+ValueNotifier<bool> creatingPDF = ValueNotifier<bool>(false);
+
 createPDF(CollectionReference services, selectedMonth, datePicker) async {
+  creatingPDF.value = true;
   PdfDocument document = PdfDocument(
       inputBytes: (await rootBundle.load('assets/pdf/folha_de_contas.pdf'))
           .buffer
@@ -25,7 +30,7 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
 
 //Nome da congregação
   PdfTextBoxField congregationName = form.fields[0] as PdfTextBoxField;
-  congregationName.text = 'Santo Hilário';
+  congregationName.text = 'Santo Hilário - 107599';
   congregationName.font = headerFont;
 
 //Cidade
@@ -49,8 +54,6 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
   PdfTextBoxField year = form.fields[16] as PdfTextBoxField;
   year.text = datePicker.dateTime.year.toString();
   year.font = headerFont;
-
-  print(form.fields[479]);
 
 //52 linhas no fomrulário
 //534 forms
@@ -87,7 +90,12 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
     while (o < contas.length && descriptionIndex < 426) {
       PdfTextBoxField description =
           form.fields[descriptionIndex] as PdfTextBoxField;
-      description.text = contas.elementAt(o)['descricao'].toString();
+      String noSpecialCharacteres = contas
+          .elementAt(o)['descricao']
+          .toString()
+          .replaceAll(RegExp('[^A-Za-z0-9 ãõâéàáçÇêó]'), '');
+      description.text = noSpecialCharacteres;
+      description.font = bodyFont;
       descriptionIndex = descriptionIndex + 4;
       o++;
     }
@@ -119,23 +127,28 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
     int valueIndex = 1;
     int value2Index = 2;
     o = 0;
-    final currency = NumberFormat("#,##0.00", "pt_BR");
+    final currency = NumberFormat("####0.00");
     while (o < contas.length && valueIndex < 426) {
-      if (contas.elementAt(o)['descricao'] == 'Depósito na conta') {
-        valueIndex = 212 + (o * 4);
-      } else if (contas.elementAt(o)['ocorrencia'] == 'entrada') {
+      if (contas.elementAt(o)['ocorrencia'] == 'entrada' &&
+          contas.elementAt(o)['descricao'] != 'Transferência via PIX' &&
+          contas.elementAt(o)['descricao'] != 'Depósito na conta') {
         if (o >= 5) {
           valueIndex = 20 + ((o - 5) * (4));
         } else {
           valueIndex = 1 + (o * 4);
         }
+        PdfTextBoxField value = form.fields[valueIndex] as PdfTextBoxField;
+        value.text = currency.format(contas.elementAt(o)['valor']);
+        value.font = bodyFont;
       } else if (contas.elementAt(o)['ocorrencia'] == 'saida') {
         valueIndex = 213 + (o * 4);
+        PdfTextBoxField value = form.fields[valueIndex] as PdfTextBoxField;
+        value.text = currency.format(contas.elementAt(o)['valor']);
+        value.font = bodyFont;
       }
-      PdfTextBoxField value = form.fields[valueIndex] as PdfTextBoxField;
-      value.text = currency.format(contas.elementAt(o)['valor']);
-      value.font = bodyFont;
-      if (contas.elementAt(o)['descricao'] == 'Depósito na conta') {
+
+      if (contas.elementAt(o)['descricao'] == 'Depósito na conta' ||
+          contas.elementAt(o)['descricao'] == 'Transferência via PIX') {
         if (o < 4) {
           value2Index = 2 + (o * 4);
         } else if (o == 4) {
@@ -145,6 +158,12 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
         } else if (o > 5) {
           value2Index = 25 + ((o - 6) * 4);
         }
+
+        PdfTextBoxField value2 = form.fields[value2Index] as PdfTextBoxField;
+        value2.text = currency.format(contas.elementAt(o)['valor']);
+        value2.font = bodyFont;
+      } else if (contas.elementAt(o)['descricao'].contains('Donativo')) {
+        value2Index = 212 + (o * 4);
         PdfTextBoxField value2 = form.fields[value2Index] as PdfTextBoxField;
         value2.text = currency.format(contas.elementAt(o)['valor']);
         value2.font = bodyFont;
@@ -152,18 +171,7 @@ createPDF(CollectionReference services, selectedMonth, datePicker) async {
       o++;
     }
 
-//208 total entradas donativos
-    /* PdfAutomaticField totalValue =
-        form.fields[208] as PdfAutomaticField;
-    totalValue. 
- */
-    /* int test = 0;
-    while (test < 517) {
-      print('${form.fields[test].name} - $test');
-      test++;
-    } */
-
-    saveInStorage(document);
+    saveInStorage(document, datePicker);
   }
 }
 
@@ -186,14 +194,24 @@ Future<List> createList(CollectionReference services, month) async {
   return listaFinal;
 }
 
-Future saveInStorage(document) async {
+Future saveInStorage(document, datePicker) async {
   final directory =
       (await getExternalStorageDirectories(type: StorageDirectory.downloads))!
           .first;
-
-  File file2 = File("${directory.path}/test.pdf");
+  final String month = toBeginningOfSentenceCase(
+    DateFormat.MMMM('pt br').format(datePicker.dateTime),
+  )!;
+  File file2 = File("${directory.path}/$month.pdf");
   //await file2.writeAsString('TEST ONE');
+
   file2.writeAsBytesSync(document.save());
   document.dispose();
+  await FlutterShare.shareFile(
+    title: 'Example share',
+    text: 'Example share text',
+    filePath: "${directory.path}/$month.pdf",
+  );
+  creatingPDF.value = false;
+
   print(directory.path);
 }

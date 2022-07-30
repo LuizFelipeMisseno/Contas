@@ -36,9 +36,12 @@ class _CardTransacaoState extends State<CardTransacao> {
             borderRadius: const BorderRadius.all(
               Radius.circular(20),
             ),
-            color: conta.occurrence == 'entrada'
-                ? const Color.fromARGB(255, 143, 255, 126)
-                : const Color.fromARGB(255, 255, 119, 119),
+            color: conta.description.contains("Transferência via PIX") ||
+                    conta.description.contains("Depósito na conta")
+                ? Color.fromARGB(255, 219, 219, 219)
+                : conta.occurrence == 'entrada'
+                    ? const Color.fromARGB(255, 143, 255, 126)
+                    : const Color.fromARGB(255, 255, 119, 119),
             boxShadow: const [
               BoxShadow(
                 color: Colors.black38,
@@ -51,27 +54,32 @@ class _CardTransacaoState extends State<CardTransacao> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      conta.description,
+              Flexible(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        conta.description,
+                        style: AppFonts.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      'Data: ' +
+                          DateFormat('dd')
+                              .format(conta.data.toDate())
+                              .toString() +
+                          '/' +
+                          DateFormat('MM')
+                              .format(conta.data.toDate())
+                              .toString(),
                       style: AppFonts.description,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    'Data: ' +
-                        DateFormat('dd')
-                            .format(conta.data.toDate())
-                            .toString() +
-                        '/' +
-                        DateFormat('MM').format(conta.data.toDate()).toString(),
-                    style: AppFonts.description,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
               Row(
                 children: [

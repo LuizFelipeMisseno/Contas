@@ -1,6 +1,8 @@
+import 'dart:developer';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:contas/homepage/components/create_pdf.dart';
+import 'package:contas/new_transations/components/calendar.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:contas/components/app_fonts.dart';
@@ -102,13 +104,28 @@ class _HomePageState extends State<HomePage> {
                     },
                     icon: const Icon(Icons.calendar_today),
                   ),
-                  IconButton(
-                    onPressed: () {
-                      createPDF(services, month, datePicker);
+                  ValueListenableBuilder<bool>(
+                    valueListenable: creatingPDF,
+                    builder: (context, loading, _) {
+                      return IconButton(
+                        onPressed: () {
+                          createPDF(services, month, datePicker);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Criando PDF...'),
+                            ),
+                          );
+                        },
+                        icon: loading
+                            ? const Padding(
+                                padding: EdgeInsets.all(5),
+                                child: CircularProgressIndicator(),
+                              )
+                            : const Icon(
+                                Icons.file_copy,
+                              ),
+                      );
                     },
-                    icon: const Icon(
-                      Icons.file_copy,
-                    ),
                   ),
                 ],
               ),
@@ -216,60 +233,72 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Column(
                         children: [
-                          selectedView == 'saidas'
-                              ? Text(
-                                  'Entradas:  Indisponível',
-                                  style: AppFonts.normal,
-                                )
-                              : Text(
-                                  'Entradas:  ' +
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              selectedView == 'saidas'
+                                  ? Text(
+                                      'Entradas:  Indisponível',
+                                      style: AppFonts.normal,
+                                    )
+                                  : Text(
+                                      'Entradas:  ' +
+                                          currency.format(
+                                            getEntrada(snapshot, month),
+                                          ),
+                                      style: AppFonts.normal,
+                                    ),
+                              selectedView == 'entradas'
+                                  ? Text(
+                                      'Saídas:  Indisponível',
+                                      style: AppFonts.normal,
+                                    )
+                                  : Text(
+                                      'Saídas:  ' +
+                                          currency.format(
+                                            getSaida(snapshot, month),
+                                          ),
+                                      style: AppFonts.normal,
+                                    ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                  "Obra mundial: " +
                                       currency.format(
-                                        getEntrada(snapshot, month),
+                                        getObraMundial(snapshot, month),
                                       ),
-                                  style: AppFonts.normal,
-                                ),
-                          selectedView == 'entradas'
-                              ? Text(
-                                  'Saídas:  Indisponível',
-                                  style: AppFonts.normal,
-                                )
-                              : Text(
-                                  'Saídas:  ' +
-                                      currency.format(
-                                        getSaida(snapshot, month),
-                                      ),
-                                  style: AppFonts.normal,
-                                ),
+                                  style: AppFonts.normal),
+                              selectedView == 'tudo'
+                                  ? Text(
+                                      selectedRange == 'mes'
+                                          ? 'Saldo:  ' +
+                                              currency.format(
+                                                getSaldo(
+                                                  getEntrada(snapshot, month),
+                                                  getSaida(snapshot, month),
+                                                ),
+                                              )
+                                          : 'Saldo final do dia:  ' +
+                                              currency.format(
+                                                getSaldo(
+                                                  getEntrada(snapshot, month),
+                                                  getSaida(snapshot, month),
+                                                ),
+                                              ),
+                                      style: AppFonts.normal,
+                                    )
+                                  : Container(),
+                            ],
+                          )
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      selectedView == 'tudo'
-                          ? Row(
-                              children: [
-                                Text(
-                                  selectedRange == 'mes'
-                                      ? 'Saldo da conta:  ' +
-                                          currency.format(
-                                            getSaldo(
-                                              getEntrada(snapshot, month),
-                                              getSaida(snapshot, month),
-                                            ),
-                                          )
-                                      : 'Saldo final do dia:  ' +
-                                          currency.format(
-                                            getSaldo(
-                                              getEntrada(snapshot, month),
-                                              getSaida(snapshot, month),
-                                            ),
-                                          ),
-                                  style: AppFonts.normal,
-                                ),
-                              ],
-                            )
-                          : Container(),
+                      const SizedBox(height: 10),
                     ],
                   )
                 : Column(
@@ -304,7 +333,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  body(month, datePicker, services) {
+  body(month, HomePageDatePicker datePicker, services) {
     return Column(
       children: [
         //Ver tudo
@@ -371,7 +400,6 @@ class _HomePageState extends State<HomePage> {
             : GestureDetector(
                 onTap: () {
                   monthPicker(datePicker);
-                  //datePicker.showCalendar(context);
                 },
                 child: Text(
                   toBeginningOfSentenceCase(
@@ -451,6 +479,7 @@ class _HomePageState extends State<HomePage> {
               }
             }
           }
+          listaFinal.sort((a, b) => a["data"].compareTo(b["data"]));
           return listaFinal;
         }
       }
@@ -475,21 +504,24 @@ class _HomePageState extends State<HomePage> {
         }
       }
     }
-
+    listaFinal.sort((a, b) => a["data"].compareTo(b["data"]));
     return listaFinal;
   }
 
   getEntrada(AsyncSnapshot<QuerySnapshot<Object?>> snapshot, month) {
     List entrada = [];
     dynamic total = 0;
-    createList(snapshot, month).forEach((element) {
-      if (element['ocorrencia'] == 'entrada') {
-        entrada.add(element['valor']);
-      }
-    });
-    if (entrada.isNotEmpty) {
-      total = entrada.reduce((total, valor) => total + valor);
-    }
+    createList(snapshot, month).forEach(
+      (element) {
+        if (element['ocorrencia'] == 'entrada') {
+          if (element['descricao'] != 'Transferência via PIX') {
+            if (element["descricao"].contains("Depósito") == false) {
+              total += element['valor'];
+            }
+          }
+        }
+      },
+    );
 
     return total;
   }
@@ -510,6 +542,16 @@ class _HomePageState extends State<HomePage> {
 
   getSaldo(entrada, saida) {
     var total = entrada - saida;
+    return total;
+  }
+
+  getObraMundial(AsyncSnapshot<QuerySnapshot<Object?>> snapshot, month) {
+    dynamic total = 0;
+    createList(snapshot, month).forEach((element) {
+      if (element['descricao'].contains('Obra Mundial')) {
+        total += element['valor'];
+      }
+    });
     return total;
   }
 
